@@ -42,7 +42,7 @@ NEVER = datetime(3000, 1, 1, tzinfo=timezone.utc)
 CHECK_KINDS = (("simple", "Simple"), ("cron", "Cron"), ("oncalendar", "OnCalendar"))
 # max time between start and ping where we will consider both events related:
 MAX_DURATION = td(hours=72)
-REASONS = (("", "Unknown"), ("timeout", "Timeout"), ("fail", "Fail signal"))
+REASONS = (("", "Unknown"), ("timeout", "Timeout"), ("fail", "Fail signal"), ("maintenance", "Maintenance window"))
 
 
 TRANSPORTS: dict[str, tuple[str, type[transports.Transport] | str]] = {
@@ -670,6 +670,37 @@ class Check(models.Model):
         flip.new_status = new_status
         flip.reason = reason
         flip.save()
+
+    def is_in_maintenance(self, dt: datetime | None = None) -> bool:
+        dt = dt or now()
+        windows = MaintenanceWindow.objects.filter(
+            project=self.project,
+            starts__lte=dt,
+            ends__gt=dt,
+        )
+        for w in windows:
+            if w.all_checks or w.checks.filter(id=self.id).exists():
+                return True
+        return False
+
+
+class MaintenanceWindow(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100, blank=True)
+    starts = models.DateTimeField()
+    ends = models.DateTimeField()
+    tz = models.CharField(max_length=50, default="UTC")
+    all_checks = models.BooleanField(default=True)
+    checks = models.ManyToManyField(Check, blank=True)
+    created = models.DateTimeField(default=now)
+    updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-starts"]
+
+    def is_active(self, dt: datetime | None = None) -> bool:
+        dt = dt or now()
+        return self.starts <= dt < self.ends
 
 
 class PingDict(TypedDict):
@@ -1363,7 +1394,7 @@ class Flip(models.Model):
     processed = models.DateTimeField(null=True, blank=True)
     old_status = models.CharField(max_length=8, choices=STATUSES)
     new_status = models.CharField(max_length=8, choices=STATUSES)
-    reason = models.CharField(max_length=8, choices=REASONS, default="")
+    reason = models.CharField(max_length=20, choices=REASONS, default="")
 
     class Meta:
         indexes = (

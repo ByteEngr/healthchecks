@@ -171,7 +171,11 @@ class Command(BaseCommand):
         flip.created = flip_time
         flip.old_status = old_status
         flip.new_status = "down"
-        flip.reason = "timeout"
+        if check.is_in_maintenance(flip_time) or check.is_in_maintenance(now()):
+            flip.reason = "maintenance"
+            flip.processed = flip_time
+        else:
+            flip.reason = "timeout"
         flip.save()
 
         return True

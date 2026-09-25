@@ -33,6 +33,14 @@
     </div>
     {% endif %}
 
+    {% if is_in_maintenance %}
+    <div class="col-sm-12">
+        <p class="alert alert-warning">
+            <strong>Maintenance Active:</strong> Alerts for this check are currently muted due to an active scheduled maintenance window.
+        </p>
+    </div>
+    {% endif %}
+
     <div id="details-head" class="col-sm-12">
         <h1>
             {{ check.name_then_code }}
