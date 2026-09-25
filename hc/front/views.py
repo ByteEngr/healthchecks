@@ -7,7 +7,7 @@ import re
 import sqlite3
 from collections import Counter, defaultdict
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import datetime, timezone
 from datetime import timedelta as td
 from itertools import islice
 from typing import TypedDict, cast
@@ -47,6 +47,7 @@ from hc.api.models import (
     Channel,
     Check,
     Flip,
+    MaintenanceWindow,
     Notification,
     Ping,
     prepare_durations,
@@ -1032,6 +1033,7 @@ def details(request: AuthenticatedHttpRequest, code: UUID) -> HttpResponse:
         "tz_switches": _tz_switches(request.profile, check),
         "is_copied": "copied" in request.GET,
         "all_tags": " ".join(sorted(all_tags)),
+        "is_in_maintenance": check.is_in_maintenance(),
     }
 
     return render(request, "front/details.html", ctx)
@@ -1427,4 +1429,78 @@ def contact_vcf(request: HttpRequest) -> HttpResponse:
     return render(request, "contact.vcf", ctx, content_type="text/vcard")
 
 
-# Forks: add custom views after this line
+@login_required
+def maintenance(request: AuthenticatedHttpRequest, code: UUID) -> HttpResponse:
+    project, rw = _get_project_for_user(request, code)
+    windows = MaintenanceWindow.objects.filter(project=project).order_by("-starts")
+    checks = Check.objects.filter(project=project).order_by("name")
+
+    ctx = {
+        "page": "maintenance",
+        "project": project,
+        "rw": rw,
+        "windows": windows,
+        "checks": checks,
+    }
+    return render(request, "front/maintenance.html", ctx)
+
+
+@require_POST
+@login_required
+def add_maintenance(request: AuthenticatedHttpRequest, code: UUID) -> HttpResponse:
+    project, rw = _get_project_for_user(request, code)
+    if not rw:
+        return HttpResponseForbidden()
+
+    name = request.POST.get("name", "").strip()
+    starts_raw = request.POST.get("starts", "")
+    ends_raw = request.POST.get("ends", "")
+    all_checks = request.POST.get("all_checks") == "on" or "checks" not in request.POST
+
+    try:
+        starts = datetime.fromisoformat(starts_raw)
+        ends = datetime.fromisoformat(ends_raw)
+    except (ValueError, TypeError):
+        messages.error(request, "Invalid start or end date/time format.")
+        return redirect("hc-maintenance", code)
+
+    if starts.tzinfo is None:
+        starts = starts.replace(tzinfo=timezone.utc)
+    if ends.tzinfo is None:
+        ends = ends.replace(tzinfo=timezone.utc)
+
+    if ends <= starts:
+        messages.error(request, "End time must be after start time.")
+        return redirect("hc-maintenance", code)
+
+    mw = MaintenanceWindow.objects.create(
+        project=project,
+        name=name,
+        starts=starts,
+        ends=ends,
+        all_checks=all_checks,
+    )
+
+    if not all_checks:
+        check_ids = request.POST.getlist("checks")
+        selected_checks = Check.objects.filter(project=project, id__in=check_ids)
+        mw.checks.set(selected_checks)
+
+    messages.success(request, "Maintenance window scheduled successfully.")
+    return redirect("hc-maintenance", code)
+
+
+@require_POST
+@login_required
+def remove_maintenance(
+    request: AuthenticatedHttpRequest, code: UUID, mw_id: int
+) -> HttpResponse:
+    project, rw = _get_project_for_user(request, code)
+    if not rw:
+        return HttpResponseForbidden()
+
+    mw = get_object_or_404(MaintenanceWindow, id=mw_id, project=project)
+    mw.delete()
+    messages.success(request, "Maintenance window removed.")
+    return redirect("hc-maintenance", code)
+

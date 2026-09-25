@@ -45,6 +45,9 @@ project_urls = [
     path("checks/add/", views.add_check, name="hc-add-check"),
     path("checks/status/", views.status, name="hc-status"),
     path("integrations/", views.channels, name="hc-channels"),
+    path("maintenance/", views.maintenance, name="hc-maintenance"),
+    path("maintenance/add/", views.add_maintenance, name="hc-add-maintenance"),
+    path("maintenance/<int:mw_id>/remove/", views.remove_maintenance, name="hc-remove-maintenance"),
 ]
 
 # /

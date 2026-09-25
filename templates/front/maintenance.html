@@ -1,0 +1,171 @@
+{% extends "base_project.html" %}
+{% load static hc_extras %}
+
+{% block title %}Maintenance Windows - {{ site_name }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-sm-12">
+        <div class="pull-right">
+            {% if rw %}
+            <button class="btn btn-primary" data-toggle="modal" data-target="#add-maintenance-modal">
+                <span class="icon-plus"></span> Schedule Maintenance
+            </button>
+            {% endif %}
+        </div>
+        <h1>Maintenance Windows</h1>
+        <p class="lead">
+            Schedule planned downtime windows to suppress alert notifications for your checks during routine maintenance, database migrations, or server reboots.
+        </p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-sm-12">
+        {% if windows %}
+        <div class="panel panel-default">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Name</th>
+                        <th>Starts</th>
+                        <th>Ends</th>
+                        <th>Applies To</th>
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for window in windows %}
+                    <tr>
+                        <td>
+                            {% if window.is_active %}
+                                <span class="label label-warning">Active Now</span>
+                            {% elif window.starts > now %}
+                                <span class="label label-info">Scheduled</span>
+                            {% else %}
+                                <span class="label label-default">Ended</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <strong>{{ window.name|default:"Maintenance Window" }}</strong>
+                        </td>
+                        <td>{{ window.starts|date:"Y-m-d H:i T" }}</td>
+                        <td>{{ window.ends|date:"Y-m-d H:i T" }}</td>
+                        <td>
+                            {% if window.all_checks %}
+                                <span class="label label-primary">All Checks</span>
+                            {% else %}
+                                {{ window.checks.count }} check{% if window.checks.count != 1 %}s{% endif %}
+                            {% endif %}
+                        </td>
+                        <td class="text-right">
+                            {% if rw %}
+                            <form action="{% url 'hc-remove-maintenance' project.code window.id %}" method="post" style="display:inline;">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-xs btn-danger" onclick="return confirm('Delete this maintenance window?');">
+                                    Delete
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="well text-center" style="padding: 40px 20px;">
+            <h3>No Maintenance Windows Scheduled</h3>
+            <p>You have not configured any maintenance windows for this project.</p>
+            {% if rw %}
+            <br>
+            <button class="btn btn-primary btn-lg" data-toggle="modal" data-target="#add-maintenance-modal">
+                Schedule Maintenance Window
+            </button>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if rw %}
+<div id="add-maintenance-modal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" action="{% url 'hc-add-maintenance' project.code %}" method="post">
+            {% csrf_token %}
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title">Schedule Maintenance Window</h4>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="mw-name">Name / Description (optional)</label>
+                    <input type="text" id="mw-name" name="name" class="form-control" placeholder="e.g. Weekly DB Backup, System Upgrade">
+                </div>
+
+                <div class="row">
+                    <div class="col-sm-6">
+                        <div class="form-group">
+                            <label for="mw-starts">Start Time (UTC)</label>
+                            <input type="datetime-local" id="mw-starts" name="starts" class="form-control" required>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="form-group">
+                            <label for="mw-ends">End Time (UTC)</label>
+                            <input type="datetime-local" id="mw-ends" name="ends" class="form-control" required>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Scope</label>
+                    <div class="checkbox">
+                        <label>
+                            <input type="checkbox" name="all_checks" value="on" checked id="mw-all-checks">
+                            Apply to all current and future checks in this project
+                        </label>
+                    </div>
+                </div>
+
+                {% if checks %}
+                <div id="mw-specific-checks-group" style="display: none;">
+                    <label>Select Specific Checks:</label>
+                    <div style="max-height: 150px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 4px;">
+                        {% for check in checks %}
+                        <div class="checkbox" style="margin-top: 2px; margin-bottom: 2px;">
+                            <label>
+                                <input type="checkbox" name="checks" value="{{ check.id }}">
+                                {{ check.name_then_code }}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Schedule Window</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var allChecksBox = document.getElementById("mw-all-checks");
+    var specificGroup = document.getElementById("mw-specific-checks-group");
+    if (allChecksBox && specificGroup) {
+        allChecksBox.addEventListener("change", function() {
+            specificGroup.style.display = this.checked ? "none" : "block";
+        });
+    }
+});
+</script>
+{% endblock %}
